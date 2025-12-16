@@ -1,0 +1,5 @@
+{
+  "name": "SyncSheet AI",
+  "description": "An interconnected spreadsheet application where data changes propagate across sheets based on common identifiers. Features a built-in form and Gemini AI integration for smart data handling.",
+  "requestFramePermissions": []
+}
