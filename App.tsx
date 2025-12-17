@@ -1,20 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { INITIAL_SHEETS } from './constants';
-import { Sheet, AppState, Row, CellValue } from './types';
+import { Sheet, AppState, Row, CellValue, Column } from './types';
 import SheetGrid from './components/SheetGrid';
 import DataForm from './components/DataForm';
-import { Database, Plus, RefreshCw, MessageSquare, Table, Layout, Menu, X } from 'lucide-react';
+import CreateSheetModal from './components/CreateSheetModal';
+import AddColumnModal from './components/AddColumnModal';
+import { Database, Plus, RefreshCw, MessageSquare, Table, Layout, Menu, X, Trash2, Upload } from 'lucide-react';
 import { analyzeData } from './services/geminiService';
+import { parseExcelFile } from './services/excelImporter';
 
 const App: React.FC = () => {
   const [sheets, setSheets] = useState<Sheet[]>(INITIAL_SHEETS);
   const [activeSheetId, setActiveSheetId] = useState<string>(INITIAL_SHEETS[0].id);
   const [showForm, setShowForm] = useState(false);
+  const [showCreateSheetModal, setShowCreateSheetModal] = useState(false);
+  const [showAddColumnModal, setShowAddColumnModal] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [aiQuery, setAiQuery] = useState('');
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper to find rows in other sheets that match the primary key
   const findMatchingRows = (targetSheet: Sheet, primaryKeyCol: string, primaryKeyValue: CellValue) => {
@@ -111,6 +117,40 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleCreateSheet = (newSheet: Sheet) => {
+    setSheets(prev => [...prev, newSheet]);
+    setActiveSheetId(newSheet.id);
+    setShowCreateSheetModal(false);
+  };
+
+  const handleDeleteSheet = () => {
+    if (sheets.length <= 1) {
+      alert("You must have at least one sheet.");
+      return;
+    }
+    
+    if (window.confirm("Are you sure you want to delete this sheet? This action cannot be undone.")) {
+      setSheets(prev => {
+        const newSheets = prev.filter(s => s.id !== activeSheetId);
+        setActiveSheetId(newSheets[0].id);
+        return newSheets;
+      });
+    }
+  };
+
+  const handleAddColumn = (newColumn: Column) => {
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id === activeSheetId) {
+        return {
+          ...sheet,
+          columns: [...sheet.columns, newColumn]
+        };
+      }
+      return sheet;
+    }));
+    setShowAddColumnModal(false);
+  };
+
   const handleAiAnalysis = async () => {
     if (!aiQuery) return;
     setIsAiLoading(true);
@@ -120,10 +160,44 @@ const App: React.FC = () => {
     setIsAiLoading(false);
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const newSheets = await parseExcelFile(file);
+      if (newSheets.length > 0) {
+        setSheets(prev => [...prev, ...newSheets]);
+        setActiveSheetId(newSheets[0].id);
+        alert(`Successfully imported ${newSheets.length} sheet(s)!`);
+      } else {
+        alert("No valid data found in the file.");
+      }
+    } catch (error) {
+      alert("Error importing file. Please ensure it is a valid Excel file.");
+      console.error(error);
+    }
+
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const activeSheet = sheets.find(s => s.id === activeSheetId);
 
   return (
     <div className="flex h-screen w-full bg-gray-100 overflow-hidden font-sans">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+        accept=".xlsx, .xls"
+      />
+      
       {/* Sidebar Navigation */}
       <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white transform transition-transform duration-300 ease-in-out ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -139,7 +213,25 @@ const App: React.FC = () => {
         </div>
         
         <div className="p-4">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 px-2">Sheets</div>
+          <div className="flex items-center justify-between mb-4 px-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sheets</div>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleImportClick}
+                className="text-gray-400 hover:text-white transition-colors"
+                title="Import Excel"
+              >
+                <Upload size={16} />
+              </button>
+              <button 
+                onClick={() => setShowCreateSheetModal(true)}
+                className="text-gray-400 hover:text-white transition-colors"
+                title="Create New Sheet"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
           <nav className="space-y-1">
             {sheets.map(sheet => (
               <button
@@ -205,6 +297,14 @@ const App: React.FC = () => {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+             <button
+               onClick={handleDeleteSheet}
+               className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-md transition-colors"
+               title="Delete Sheet"
+             >
+               <Trash2 size={20} />
+             </button>
+             <div className="h-6 w-px bg-gray-200 mx-1"></div>
              <button 
                onClick={() => setShowForm(!showForm)}
                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all shadow-sm ${
@@ -229,13 +329,14 @@ const App: React.FC = () => {
                 onUpdateCell={(rowId, colName, val) => handleUpdateCell(activeSheet.id, rowId, colName, val)}
                 onDeleteRow={(rowId) => handleDeleteRow(activeSheet.id, rowId)}
                 onAddRow={() => setShowForm(true)}
+                onAddColumnTrigger={() => setShowAddColumnModal(true)}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">Select a sheet</div>
             )}
           </div>
 
-          {/* Right Sidebar Form (Overlay or pushing content?) Let's do absolute overlay for cleaner transition */}
+          {/* Right Sidebar Form */}
           {showForm && activeSheet && (
              <div className="absolute top-0 right-0 bottom-0 h-full shadow-2xl transition-transform animate-slide-in-right">
                 <DataForm 
@@ -247,6 +348,22 @@ const App: React.FC = () => {
           )}
         </main>
       </div>
+      
+      {/* Create Sheet Modal */}
+      {showCreateSheetModal && (
+        <CreateSheetModal 
+          onSave={handleCreateSheet} 
+          onClose={() => setShowCreateSheetModal(false)} 
+        />
+      )}
+
+      {/* Add Column Modal */}
+      {showAddColumnModal && (
+        <AddColumnModal
+          onSave={handleAddColumn}
+          onClose={() => setShowAddColumnModal(false)}
+        />
+      )}
     </div>
   );
 };

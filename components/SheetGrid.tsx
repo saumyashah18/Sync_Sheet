@@ -7,9 +7,10 @@ interface SheetGridProps {
   onUpdateCell: (rowId: string, colName: string, value: CellValue) => void;
   onDeleteRow: (rowId: string) => void;
   onAddRow: () => void;
+  onAddColumnTrigger?: () => void;
 }
 
-const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow, onAddRow }) => {
+const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow, onAddRow, onAddColumnTrigger }) => {
   const [editingCell, setEditingCell] = useState<{ rowId: string; colName: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +61,13 @@ const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow,
                   </div>
                 </th>
               ))}
+              {onAddColumnTrigger && (
+                <th className="p-3 border-b border-r border-gray-200 w-10 bg-gray-50 text-center hover:bg-gray-100 transition-colors cursor-pointer" onClick={onAddColumnTrigger} title="Add Column">
+                  <div className="flex items-center justify-center text-gray-400 hover:text-blue-600">
+                    <Plus size={16} />
+                  </div>
+                </th>
+              )}
               <th className="p-3 border-b border-gray-200 w-16 bg-gray-50"></th>
             </tr>
           </thead>
@@ -97,6 +105,7 @@ const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow,
                     </td>
                   );
                 })}
+                {onAddColumnTrigger && <td className="border-r border-gray-100 bg-gray-50/30"></td>}
                 <td className="p-2 text-center">
                   <button 
                     onClick={() => onDeleteRow(row.id)}
