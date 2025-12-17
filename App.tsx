@@ -29,62 +29,46 @@ const App: React.FC = () => {
 
   const handleUpdateCell = useCallback((sheetId: string, rowId: string, colName: string, newValue: CellValue) => {
     setSheets(prevSheets => {
+      // 1. Get the old value from the source
       const sourceSheet = prevSheets.find(s => s.id === sheetId);
       if (!sourceSheet) return prevSheets;
-
       const sourceRow = sourceSheet.rows.find(r => r.id === rowId);
       if (!sourceRow) return prevSheets;
 
-      const primaryKeyCol = sourceSheet.primaryKeyColumn;
-      const primaryKeyValue = sourceRow[primaryKeyCol];
+      const oldValue = sourceRow[colName];
       
-      // If we are editing the Primary Key itself, we need to decide if we update references (Cascading Update)
-      // For simplicity, we will treat PK updates as just updating the value, which might break links unless we update all.
-      // Let's implement Cascading PK Update if the column edited IS the primary key.
-      const isPkUpdate = colName === primaryKeyCol;
-      const oldPkValue = sourceRow[primaryKeyCol];
+      // If the value is the same, no need to process
+      if (oldValue === newValue) return prevSheets;
+      
+      // Check if we should sync: strict value matching on non-empty old values
+      // If oldValue is empty, we generally assume it's a new entry for that specific row and don't overwrite other empty cells.
+      const shouldSync = syncEnabled && oldValue !== '' && oldValue !== null && oldValue !== undefined;
 
-      const newSheets = prevSheets.map(sheet => {
-        // 1. Update the source sheet
-        if (sheet.id === sheetId) {
-          return {
-            ...sheet,
-            rows: sheet.rows.map(row => 
-              row.id === rowId ? { ...row, [colName]: newValue } : row
-            )
-          };
-        }
+      return prevSheets.map(sheet => {
+        // If sync is disabled, only touch the source sheet
+        if (!syncEnabled && sheet.id !== sheetId) return sheet;
 
-        // 2. Interconnection Logic: Propagate changes to other sheets
-        if (syncEnabled) {
-          // Check if this sheet has the same column name
-          const hasColumn = sheet.columns.some(c => c.name === colName);
-          // Check if this sheet has the primary key column (to identify the row)
-          const hasPrimaryKey = sheet.columns.some(c => c.name === primaryKeyCol);
+        // Check if this sheet has the column
+        const hasColumn = sheet.columns.some(c => c.name === colName);
+        if (!hasColumn) return sheet;
 
-          if (hasPrimaryKey) {
-            return {
-              ...sheet,
-              rows: sheet.rows.map(row => {
-                // If we are updating the PK itself, we look for the OLD PK value in linked sheets to update it
-                if (isPkUpdate) {
-                   if (String(row[primaryKeyCol]) === String(oldPkValue)) {
-                     return { ...row, [colName]: newValue };
-                   }
-                } 
-                // Normal update: Look for matching PK and update the attribute
-                else if (hasColumn && String(row[primaryKeyCol]) === String(primaryKeyValue)) {
-                  return { ...row, [colName]: newValue };
-                }
-                return row;
-              })
-            };
-          }
-        }
-        return sheet;
+        return {
+          ...sheet,
+          rows: sheet.rows.map(row => {
+            // 1. Direct update for the edited cell
+            if (sheet.id === sheetId && row.id === rowId) {
+              return { ...row, [colName]: newValue };
+            }
+
+            // 2. Sync update: If sync enabled, matching column name, and matching OLD value
+            if (shouldSync && String(row[colName]) === String(oldValue)) {
+              return { ...row, [colName]: newValue };
+            }
+
+            return row;
+          })
+        };
       });
-
-      return newSheets;
     });
   }, [syncEnabled]);
 
@@ -130,11 +114,15 @@ const App: React.FC = () => {
     }
     
     if (window.confirm("Are you sure you want to delete this sheet? This action cannot be undone.")) {
-      setSheets(prev => {
-        const newSheets = prev.filter(s => s.id !== activeSheetId);
-        setActiveSheetId(newSheets[0].id);
-        return newSheets;
-      });
+      const newSheets = sheets.filter(s => s.id !== activeSheetId);
+      // Set active sheet to the first one available or the previous one logically if possible, 
+      // but simpler to just pick the first one of the remaining.
+      const nextSheetId = newSheets.length > 0 ? newSheets[0].id : '';
+      
+      setSheets(newSheets);
+      if (nextSheetId) {
+        setActiveSheetId(nextSheetId);
+      }
     }
   };
 
@@ -149,6 +137,26 @@ const App: React.FC = () => {
       return sheet;
     }));
     setShowAddColumnModal(false);
+  };
+
+  const handleDeleteColumn = (colId: string) => {
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id === activeSheetId) {
+        const column = sheet.columns.find(c => c.id === colId);
+        if (column?.name === sheet.primaryKeyColumn) {
+          alert("Cannot delete the Primary Key column as it is used to link data.");
+          return sheet;
+        }
+
+        if (window.confirm(`Are you sure you want to delete the column "${column?.name}"?`)) {
+          return {
+            ...sheet,
+            columns: sheet.columns.filter(c => c.id !== colId)
+          };
+        }
+      }
+      return sheet;
+    }));
   };
 
   const handleAiAnalysis = async () => {
@@ -330,6 +338,7 @@ const App: React.FC = () => {
                 onDeleteRow={(rowId) => handleDeleteRow(activeSheet.id, rowId)}
                 onAddRow={() => setShowForm(true)}
                 onAddColumnTrigger={() => setShowAddColumnModal(true)}
+                onDeleteColumn={handleDeleteColumn}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">Select a sheet</div>

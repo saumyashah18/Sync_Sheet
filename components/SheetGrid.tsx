@@ -8,9 +8,10 @@ interface SheetGridProps {
   onDeleteRow: (rowId: string) => void;
   onAddRow: () => void;
   onAddColumnTrigger?: () => void;
+  onDeleteColumn?: (colId: string) => void;
 }
 
-const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow, onAddRow, onAddColumnTrigger }) => {
+const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow, onAddRow, onAddColumnTrigger, onDeleteColumn }) => {
   const [editingCell, setEditingCell] = useState<{ rowId: string; colName: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,12 +53,26 @@ const SheetGrid: React.FC<SheetGridProps> = ({ sheet, onUpdateCell, onDeleteRow,
                 #
               </th>
               {sheet.columns.map((col) => (
-                <th key={col.id} className="p-3 border-b border-r border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[150px]">
+                <th key={col.id} className="p-3 border-b border-r border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider min-w-[150px] group/header">
                   <div className="flex items-center justify-between">
                     <span>{col.name}</span>
-                    {col.name === sheet.primaryKeyColumn && (
-                      <span title="Primary Key (Link)" className="text-blue-500 text-[10px] bg-blue-50 px-1 rounded ml-2">KEY</span>
-                    )}
+                    <div className="flex items-center">
+                      {col.name === sheet.primaryKeyColumn && (
+                        <span title="Primary Key (Link)" className="text-blue-500 text-[10px] bg-blue-50 px-1 rounded ml-2">KEY</span>
+                      )}
+                      {col.name !== sheet.primaryKeyColumn && onDeleteColumn && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteColumn(col.id);
+                          }}
+                          className="opacity-0 group-hover/header:opacity-100 p-1 hover:bg-red-100 text-gray-400 hover:text-red-500 rounded ml-2 transition-all"
+                          title="Delete Column"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </th>
               ))}
